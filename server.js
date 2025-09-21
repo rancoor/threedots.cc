@@ -1,23 +1,83 @@
-// server.js
 const express = require("express");
+const session = require("express-session");
+const bodyParser = require("body-parser");
 const fs = require("fs");
 const os = require("os");
+const path = require("path");
 const { exec } = require("child_process");
+const dotenv = require("dotenv");
+dotenv.config();
 
 const app = express();
 
-// --- middleware ---
-app.use(express.json());
-app.use(express.static("public")); // serve your frontend
-
-// simple auth middleware (stub — replace later)
-function requireAuth(req, res, next) {
-  // you can replace with real session/JWT logic later
-  // right now it's open for testing
-  next();
+// --- Admin credentials ---
+const ADMIN_USER = {
+  email: process.env.ADMIN_EMAIL,
+  password: process.env.ADMIN_PASSWORD,
+};
+if (!ADMIN_USER.email || !ADMIN_USER.password) {
+  console.error("Error: ADMIN_EMAIL and ADMIN_PASSWORD must be set in env");
+  process.exit(1);
 }
 
-// helper to run shell commands
+
+// --- Middleware ---
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(
+  session({
+    secret: "supersecretkey", // change this too
+    resave: false,
+    saveUninitialized: true,
+  })
+);
+app.use(express.static("public"));
+
+// --- Auth middleware ---
+function requireAuth(req, res, next) {
+  if (req.session && req.session.loggedIn) {
+    return next();
+  }
+  return res.status(401).json({ error: "Unauthorized" });
+}
+
+// --- Routes ---
+// Landing → login page
+app.get("/", (req, res) => {
+  if (req.session.loggedIn) {
+    return res.redirect("/dashboard");
+  }
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+// Login
+app.post("/login", (req, res) => {
+  const { email, password } = req.body;
+
+  if (email === ADMIN_USER.email && password === ADMIN_USER.password) {
+    req.session.loggedIn = true;
+    return res.redirect("/dashboard");
+  }
+  res.send(`
+    <h2>Invalid credentials</h2>
+    <a href="/">Go back</a>
+  `);
+});
+
+// Dashboard page
+app.get("/dashboard", (req, res) => {
+  if (!req.session.loggedIn) return res.redirect("/");
+  res.sendFile(path.join(__dirname, "public", "dashboard.html"));
+});
+
+// Logout
+app.get("/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.redirect("/");
+  });
+});
+
+// --- Helpers ---
 function run(cmd) {
   return new Promise((resolve, reject) => {
     exec(cmd, (err, stdout, stderr) => {
@@ -110,13 +170,17 @@ app.get("/api/metrics", requireAuth, (req, res) => {
 });
 
 // --- Health ---
-app.get("/api/health", (req, res) =>
+app.get("/api/health", requireAuth, (req, res) =>
   res.json({ ok: true, time: new Date().toISOString() })
 );
 
 // --- Start ---
 const PORT = process.env.PORT || 7100;
 app.listen(PORT, () =>
-  console.log(`Server listening on http://localhost:${PORT}`)
+  console.log(`🚀 Server running at http://localhost:${PORT}`)
 );
-// visit http://localhost:7100 in your browser
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+  process.exit(1);
+});
