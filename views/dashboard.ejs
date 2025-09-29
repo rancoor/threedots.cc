@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PM2 Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body class="bg-gray-900 text-white">
+  <% include ("header") %>
+
+  <div class="container mx-auto p-6">
+    <h2 class="text-2xl font-semibold mb-4">PM2 Processes</h2>
+
+    <div id="pm2Grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <% processes.forEach(proc => { %>
+        <div id="proc-<%= proc.pm_id %>" class="bg-gray-800 p-4 rounded-xl shadow-md">
+          <h3 class="text-lg font-bold"><%= proc.name %></h3>
+          <p>Status: 
+            <span class="<%= proc.pm2_env.status === 'online' ? 'text-green-400' : 'text-red-400' %>">
+              <%= proc.pm2_env.status %>
+            </span>
+          </p>
+          <p>Memory: <%= (proc.monit.memory/1024/1024).toFixed(2) %> MB</p>
+          <p>CPU: <%= proc.monit.cpu %>%</p>
+
+          <!-- Actions -->
+          <div class="mt-3 flex gap-2">
+            <button onclick="pm2Action('<%= proc.pm_id %>', 'restart')" class="px-3 py-1 bg-yellow-600 rounded">Restart</button>
+            <button onclick="pm2Action('<%= proc.pm_id %>', 'stop')" class="px-3 py-1 bg-red-600 rounded">Stop</button>
+            <a href="/logs/<%= proc.pm_id %>" class="px-3 py-1 bg-gray-600 rounded">Logs</a>
+          </div>
+
+          <!-- Chart -->
+          <div class="mt-4 h-40">
+            <canvas id="chart-<%= proc.pm_id %>" class="bg-gray-700 p-2 rounded"></canvas>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+    const charts = {};
+
+    function createChart(ctx, name) {
+      return new Chart(ctx, {
+        type: "line",
+        data: { labels: [], datasets: [
+          { label: "CPU (%)", borderColor: "lime", data: [], yAxisID: "y" },
+          { label: "Memory (MB)", borderColor: "skyblue", data: [], yAxisID: "y1" }
+        ]},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: { y: { position: "left" }, y1: { position: "right", grid: { drawOnChartArea: false } } }
+        }
+      });
+    }
+
+    document.querySelectorAll("canvas[id^='chart-']").forEach(c => {
+      const ctx = c.getContext("2d");
+      const id = c.id.split("-")[1];
+      charts[id] = createChart(ctx, `Process ${id}`);
+    });
+
+    // PM2 live update
+socket.on("pm2Update", (processes) => {
+  processes.forEach(proc => {
+    const card = document.getElementById(`proc-${proc.pm_id}`);
+    if (!card) return;
+
+    card.querySelector(".status").innerText = proc.pm2_env.status;
+    card.querySelector(".cpu").innerText = proc.monit.cpu + "%";
+    card.querySelector(".mem").innerText = (proc.monit.memory / 1024 / 1024).toFixed(2) + " MB";
+
+    const chart = charts[proc.pm_id];
+    if (!chart) return;
+
+    const now = new Date().toLocaleTimeString();
+    if (chart.data.labels.length > 20) {
+      chart.data.labels.shift();
+      chart.data.datasets[0].data.shift();
+      chart.data.datasets[1].data.shift();
+    }
+    chart.data.labels.push(now);
+    chart.data.datasets[0].data.push(proc.monit.cpu); // number
+    chart.data.datasets[1].data.push(proc.monit.memory / 1024 / 1024); // number
+    chart.update();
+  });
+});
+
+    function pm2Action(id, cmd) {
+      fetch(`/action/${id}/${cmd}`, { method: "POST" })
+        .then(res => res.json())
+        .then(data => alert(data.success ? `${cmd} executed` : `Error: ${data.error}`));
+    }
+  </script>
+</body>
+</html>

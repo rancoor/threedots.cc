@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PM2 Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body class="bg-gray-900 text-white">
+  <div class="container mx-auto p-6">
+    <nav class="flex gap-6 mb-6 text-lg">
+      <a href="/" class="hover:underline">PM2</a>
+      <a href="/docker" class="hover:underline">Docker</a>
+    </nav>
+
+    <h1 class="text-3xl font-bold mb-6">PM2 Dashboard</h1>
+
+    <div id="processGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <% processes.forEach(proc => { %>
+        <div id="proc-<%= proc.pm_id %>" class="bg-gray-800 rounded-xl p-4 shadow-md">
+          <h2 class="text-xl font-semibold"><%= proc.name %></h2>
+          <p>Status: <span class="status <%= proc.pm2_env.status === 'online' ? 'text-green-400' : 'text-red-400' %>"><%= proc.pm2_env.status %></span></p>
+          <p>PID: <%= proc.pid %></p>
+          <p>CPU: <span class="cpu"><%= proc.monit.cpu %>%</span></p>
+          <p>Memory: <span class="mem"><%= (proc.monit.memory/1024/1024).toFixed(2) %> MB</span></p>
+          <p>Restarts: <%= proc.pm2_env.restart_time %></p>
+          <div class="mt-4 flex gap-2">
+            <a href="/logs/<%= proc.name %>" class="px-3 py-1 bg-blue-600 rounded hover:bg-blue-500">Logs</a>
+            <button onclick="sendAction(<%= proc.pm_id %>, 'restart')" class="px-3 py-1 bg-yellow-600 rounded hover:bg-yellow-500">Restart</button>
+            <button onclick="sendAction(<%= proc.pm_id %>, 'stop')" class="px-3 py-1 bg-red-600 rounded hover:bg-red-500">Stop</button>
+            <button onclick="sendAction(<%= proc.pm_id %>, 'delete')" class="px-3 py-1 bg-gray-600 rounded hover:bg-gray-500">Delete</button>
+          </div>
+
+          <div class="mt-4">
+            <canvas id="chart-<%= proc.pm_id %>" class="bg-gray-700 p-2 rounded"></canvas>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+    const charts = {};
+
+    function createChart(ctx, name) {
+      return new Chart(ctx, {
+        type: "line",
+        data: { labels: [], datasets: [
+          { label: "CPU (%)", borderColor: "rgb(34,197,94)", data: [], yAxisID: "y" },
+          { label: "Memory (MB)", borderColor: "rgb(59,130,246)", data: [], yAxisID: "y1" }
+        ]},
+        options: {
+          responsive: true,
+          interaction: { mode: "index", intersect: false },
+          stacked: false,
+          plugins: { legend: { labels: { color: "white" } }, title: { display: true, text: name, color: "white" } },
+          scales: {
+            y: { type: "linear", position: "left", ticks: { color: "white" } },
+            y1: { type: "linear", position: "right", ticks: { color: "white" }, grid: { drawOnChartArea: false } }
+          }
+        }
+      });
+    }
+
+    document.querySelectorAll("canvas[id^='chart-']").forEach(canvas => {
+      const ctx = canvas.getContext("2d");
+      const id = canvas.id.split("-")[1];
+      charts[id] = createChart(ctx, `Process ${id}`);
+    });
+
+    socket.on("processUpdate", processes => {
+      processes.forEach(proc => {
+        const card = document.getElementById(`proc-${proc.pm_id}`);
+        if (card) {
+          card.querySelector(".status").innerText = proc.pm2_env.status;
+          card.querySelector(".cpu").innerText = proc.monit.cpu + "%";
+          card.querySelector(".mem").innerText = (proc.monit.memory/1024/1024).toFixed(2) + " MB";
+        }
+        const chart = charts[proc.pm_id];
+        if (chart) {
+          const now = new Date().toLocaleTimeString();
+          if (chart.data.labels.length > 20) {
+            chart.data.labels.shift();
+            chart.data.datasets[0].data.shift();
+            chart.data.datasets[1].data.shift();
+          }
+          chart.data.labels.push(now);
+          chart.data.datasets[0].data.push(proc.monit.cpu);
+          chart.data.datasets[1].data.push((proc.monit.memory/1024/1024).toFixed(2));
+          chart.update();
+        }
+      });
+    });
+
+    function sendAction(pm_id, cmd) {
+      fetch(`/action/${pm_id}/${cmd}`, { method: "POST" })
+        .then(res => res.json())
+        .then(data => alert(data.success ? `Process ${pm_id} ${cmd}ed` : `Error: ${data.error}`));
+    }
+  </script>
+</body>
+</html>
