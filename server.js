@@ -31,20 +31,21 @@ app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 app.use(express.static(path.join(__dirname, "public")));
 
-// ===== Routes =====
-
-// Dashboard (PM2)
+// ===== PM2 Dashboard =====
 app.get("/", async (req, res) => {
   try {
     const response = await apiClient.get("/pm2");
-    res.render("dashboard", { processes: response.data });
+    res.render("dashboard", { 
+        processes: response.data, 
+        activeTab: 'pm2' 
+    });
   } catch (err) {
     res.status(500).send("Error fetching PM2 data: " + err.message);
   }
 });
 
-// PM2 logs
-app.get("/logs", async (req, res) => {
+// PM2 Logs
+app.get("/logs/:id", async (req, res) => {
   const { id } = req.params;
   try {
     const response = await apiClient.get(`/pm2/logs/${id}`);
@@ -54,7 +55,7 @@ app.get("/logs", async (req, res) => {
   }
 });
 
-// PM2 actions
+// PM2 Actions
 app.post("/action/:id/:cmd", async (req, res) => {
   const { id, cmd } = req.params;
   try {
@@ -65,17 +66,25 @@ app.post("/action/:id/:cmd", async (req, res) => {
   }
 });
 
-// Docker Dashboard
+// ===== Docker Dashboard =====
 app.get("/docker", async (req, res) => {
   try {
     const response = await apiClient.get("/docker");
-    res.render("docker", { containers: response.data });
+    const containers = response.data.map(c => ({
+      ...c,
+      CPU: 0,
+      Memory: 0
+    }));
+    res.render("docker", { 
+        containers,
+        activeTab: 'docker'
+    });
   } catch (err) {
     res.status(500).send("Error fetching Docker data: " + err.message);
   }
 });
 
-// Docker actions
+// Docker Actions
 app.post("/docker/action/:id/:cmd", async (req, res) => {
   const { id, cmd } = req.params;
   try {
@@ -86,7 +95,7 @@ app.post("/docker/action/:id/:cmd", async (req, res) => {
   }
 });
 
-// Docker logs
+// Docker Logs
 app.get("/docker/logs/:id", async (req, res) => {
   const { id } = req.params;
   try {
@@ -97,7 +106,7 @@ app.get("/docker/logs/:id", async (req, res) => {
   }
 });
 
-// ===== Socket.io =====
+// ===== Socket.io Live Updates =====
 io.on("connection", (socket) => {
   console.log("Client connected");
 
@@ -105,10 +114,18 @@ io.on("connection", (socket) => {
     try {
       const [pm2Res, dockerRes] = await Promise.all([
         apiClient.get("/pm2"),
-        apiClient.get("/docker"),
+        apiClient.get("/docker")
       ]);
+
+      // Ensure numeric CPU/Memory for Docker
+      const containers = dockerRes.data.map(c => ({
+        ...c,
+        CPU: c.CPU || 0,
+        Memory: c.Memory || 0
+      }));
+
       socket.emit("pm2Update", pm2Res.data);
-      socket.emit("dockerUpdate", dockerRes.data);
+      socket.emit("dockerUpdate", containers);
     } catch (err) {
       console.error("Socket update error:", err.message);
     }

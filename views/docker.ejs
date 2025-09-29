@@ -15,17 +15,19 @@
 
     <div id="dockerGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <% containers.forEach(c => { %>
-        <div id="cont-<%= c.ID %>" class="bg-gray-800 p-4 rounded-xl shadow-md">
-          <h3 class="text-lg font-bold"><%= c.Names %></h3>
+        <div id="cont-<%= c.ID %>" class="bg-gray-800 p-4 rounded-xl shadow-lg">
+          <h3 class="text-lg font-bold mb-2"><%= c.Names %></h3>
           <p>Status: 
-            <span class="<%= c.State === 'running' ? 'text-green-400' : 'text-red-400' %>">
+            <span class="status <%= c.State === 'running' ? 'text-green-400' : 'text-red-400' %>">
               <%= c.State %>
             </span>
           </p>
           <p>Image: <%= c.Image %></p>
           <p>Ports: <%= c.Ports || 'N/A' %></p>
-          <p>Size: <%= c.Size %></p>
-          <p>Running For: <%= c.RunningFor %></p>
+          <p>Memory: <span class="mem"><%= c.Memory || 0 %></span> MB</p>
+          <p>CPU: <span class="cpu"><%= c.CPU || 0 %></span> %</p>
+          <p>Size: <%= c.Size || 'N/A' %></p>
+          <p>Running For: <%= c.RunningFor || 'N/A' %></p>
 
           <!-- Actions -->
           <div class="mt-3 flex gap-2">
@@ -40,8 +42,8 @@
           </div>
 
           <!-- Chart -->
-          <div class="mt-4 h-40">
-            <canvas id="chart-<%= c.ID %>" class="bg-gray-700 p-2 rounded"></canvas>
+          <div class="mt-4 h-40 bg-gray-800 p-2 rounded">
+            <canvas id="chart-<%= c.ID %>"></canvas>
           </div>
         </div>
       <% }) %>
@@ -52,7 +54,7 @@
     const socket = io();
     const charts = {};
 
-    function createChart(ctx, name) {
+    function createChart(ctx) {
       return new Chart(ctx, {
         type: "line",
         data: { labels: [], datasets: [
@@ -60,7 +62,8 @@
           { label: "Memory (MB)", borderColor: "skyblue", data: [], yAxisID: "y1" }
         ]},
         options: {
-          responsive: true, maintainAspectRatio: false,
+          responsive: true,
+          maintainAspectRatio: false,
           scales: { y: { position: "left" }, y1: { position: "right", grid: { drawOnChartArea: false } } }
         }
       });
@@ -69,34 +72,33 @@
     document.querySelectorAll("canvas[id^='chart-']").forEach(c => {
       const ctx = c.getContext("2d");
       const id = c.id.split("-")[1];
-      charts[id] = createChart(ctx, `Container ${id}`);
+      charts[id] = createChart(ctx);
     });
 
-    // Docker live update
-socket.on("dockerUpdate", (containers) => {
-  containers.forEach(container => {
-    const card = document.getElementById(`docker-${container.ID}`);
-    if (!card) return;
+    socket.on("dockerUpdate", (containers) => {
+      containers.forEach(c => {
+        const card = document.getElementById(`cont-${c.ID}`);
+        if (!card) return;
 
-    card.querySelector(".status").innerText = container.State;
-    card.querySelector(".cpu").innerText = container.CPU || 0;
-    card.querySelector(".mem").innerText = container.Memory || 0;
+        card.querySelector(".status").innerText = c.State;
+        card.querySelector(".cpu").innerText = c.CPU || 0;
+        card.querySelector(".mem").innerText = c.Memory || 0;
 
-    const chart = dockerCharts[container.ID];
-    if (!chart) return;
+        const chart = charts[c.ID];
+        if (!chart) return;
 
-    const now = new Date().toLocaleTimeString();
-    if (chart.data.labels.length > 20) {
-      chart.data.labels.shift();
-      chart.data.datasets[0].data.shift();
-      chart.data.datasets[1].data.shift();
-    }
-    chart.data.labels.push(now);
-    chart.data.datasets[0].data.push(container.CPU || 0);
-    chart.data.datasets[1].data.push(container.Memory || 0);
-    chart.update();
-  });
-});
+        const now = new Date().toLocaleTimeString();
+        if (chart.data.labels.length > 20) {
+          chart.data.labels.shift();
+          chart.data.datasets[0].data.shift();
+          chart.data.datasets[1].data.shift();
+        }
+        chart.data.labels.push(now);
+        chart.data.datasets[0].data.push(c.CPU || 0);
+        chart.data.datasets[1].data.push(c.Memory || 0);
+        chart.update();
+      });
+    });
 
     function dockerAction(id, cmd) {
       fetch(`/docker/action/${id}/${cmd}`, { method: "POST" })
