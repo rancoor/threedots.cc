@@ -31,31 +31,20 @@ app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 app.use(express.static(path.join(__dirname, "public")));
 
-// ===== PM2 Dashboard =====
+// ===== PM2 Dashboard Route =====
 app.get("/", async (req, res) => {
   try {
-    const response = await apiClient.get("/pm2");
+    const response = await apiClient.get("/pm2"); // your PM2 API endpoint
     res.render("dashboard", { 
-        processes: response.data, 
-        activeTab: 'pm2' 
+      processes: response.data,
+      activeTab: "pm2"
     });
   } catch (err) {
     res.status(500).send("Error fetching PM2 data: " + err.message);
   }
 });
 
-// PM2 Logs
-app.get("/logs/:id", async (req, res) => {
-  const { id } = req.params;
-  try {
-    const response = await apiClient.get(`/pm2/logs/${id}`);
-    res.render("logs", { id, logs: response.data });
-  } catch (err) {
-    res.status(500).send("Error fetching logs: " + err.message);
-  }
-});
-
-// PM2 Actions
+// PM2 actions
 app.post("/action/:id/:cmd", async (req, res) => {
   const { id, cmd } = req.params;
   try {
@@ -66,25 +55,31 @@ app.post("/action/:id/:cmd", async (req, res) => {
   }
 });
 
-// ===== Docker Dashboard =====
+// PM2 logs
+app.get("/logs/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const response = await apiClient.get(`/pm2/logs/${id}`);
+    res.render("logs", { id, logs: response.data, type: "PM2" });
+  } catch (err) {
+    res.status(500).send("Error fetching PM2 logs: " + err.message);
+  }
+});
+
+// ===== Docker Route =====
 app.get("/docker", async (req, res) => {
   try {
     const response = await apiClient.get("/docker");
-    const containers = response.data.map(c => ({
-      ...c,
-      CPU: 0,
-      Memory: 0
-    }));
     res.render("docker", { 
-        containers,
-        activeTab: 'docker'
+      containers: response.data,
+      activeTab: "docker"
     });
   } catch (err) {
     res.status(500).send("Error fetching Docker data: " + err.message);
   }
 });
 
-// Docker Actions
+// Docker actions
 app.post("/docker/action/:id/:cmd", async (req, res) => {
   const { id, cmd } = req.params;
   try {
@@ -95,37 +90,36 @@ app.post("/docker/action/:id/:cmd", async (req, res) => {
   }
 });
 
-// Docker Logs
+// Docker logs
 app.get("/docker/logs/:id", async (req, res) => {
   const { id } = req.params;
   try {
     const response = await apiClient.get(`/docker/logs/${id}`);
-    res.render("logs", { id, logs: response.data });
+    res.render("logs", { id, logs: response.data, type: "Docker" });
   } catch (err) {
     res.status(500).send("Error fetching Docker logs: " + err.message);
   }
 });
 
-// ===== Socket.io Live Updates =====
+// ===== Socket.io for live PM2/Docker updates =====
 io.on("connection", (socket) => {
   console.log("Client connected");
 
   const interval = setInterval(async () => {
     try {
-      const [pm2Res, dockerRes] = await Promise.all([
-        apiClient.get("/pm2"),
-        apiClient.get("/docker")
-      ]);
-
-      // Ensure numeric CPU/Memory for Docker
-      const containers = dockerRes.data.map(c => ({
-        ...c,
-        CPU: c.CPU || 0,
-        Memory: c.Memory || 0
-      }));
-
+      // PM2 live data
+      const pm2Res = await apiClient.get("/pm2");
       socket.emit("pm2Update", pm2Res.data);
-      socket.emit("dockerUpdate", containers);
+
+      // Docker live data (example: only first container)
+      const dockerRes = await apiClient.get("/docker");
+      const container = dockerRes.data[0];
+      if (container) {
+        socket.emit("dockerUpdate", {
+          CPU: container.CPU || 0,
+          Memory: container.Memory || 0
+        });
+      }
     } catch (err) {
       console.error("Socket update error:", err.message);
     }

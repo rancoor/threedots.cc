@@ -13,90 +13,91 @@
   <div class="container mx-auto p-6">
     <h2 class="text-2xl font-semibold mb-4">Docker Containers</h2>
 
-    <div id="dockerGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <% containers.forEach(c => { %>
-        <div id="cont-<%= c.ID %>" class="bg-gray-800 p-4 rounded-xl shadow-lg">
-          <h3 class="text-lg font-bold mb-2"><%= c.Names %></h3>
-          <p>Status: 
-            <span class="status <%= c.State === 'running' ? 'text-green-400' : 'text-red-400' %>">
-              <%= c.State %>
-            </span>
-          </p>
-          <p>Image: <%= c.Image %></p>
-          <p>Ports: <%= c.Ports || 'N/A' %></p>
-          <p>Memory: <span class="mem"><%= c.Memory || 0 %></span> MB</p>
-          <p>CPU: <span class="cpu"><%= c.CPU || 0 %></span> %</p>
-          <p>Size: <%= c.Size || 'N/A' %></p>
-          <p>Running For: <%= c.RunningFor || 'N/A' %></p>
+    <% if (containers.length > 0) { %>
+      <div id="dockerGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <% containers.forEach(c => { %>
+          <div id="container-<%= c.ID %>" class="bg-gray-800 p-4 rounded-xl shadow-md">
+            <h3 class="text-lg font-bold mb-2"><%= Array.isArray(c.Names) ? c.Names.join(", ") : c.Names %></h3>
+            <p>Status: 
+              <span class="<%= c.State === 'running' ? 'text-green-400' : 'text-red-400' %>">
+                <%= c.State %>
+              </span>
+            </p>
+            <p>Image: <%= c.Image %></p>
+            <p>Ports: <%= c.Ports || 'N/A' %></p>
+            <p>Memory: <span class="mem"><%= c.Memory || 0 %></span> MB</p>
+            <p>CPU: <span class="cpu"><%= c.CPU || 0 %></span> %</p>
 
-          <!-- Actions -->
-          <div class="mt-3 flex gap-2">
-            <button onclick="dockerAction('<%= c.ID %>', 'restart')" class="px-3 py-1 bg-yellow-600 rounded">Restart</button>
-            <% if (c.State === 'running') { %>
-              <button onclick="dockerAction('<%= c.ID %>', 'stop')" class="px-3 py-1 bg-red-600 rounded">Stop</button>
-            <% } else { %>
-              <button onclick="dockerAction('<%= c.ID %>', 'start')" class="px-3 py-1 bg-green-600 rounded">Start</button>
-            <% } %>
-            <a href="/docker/logs/<%= c.ID %>" class="px-3 py-1 bg-gray-600 rounded">Logs</a>
-            <button onclick="dockerAction('<%= c.ID %>', 'rm')" class="px-3 py-1 bg-gray-500 rounded">Remove</button>
-          </div>
+            <!-- Actions -->
+            <div class="mt-3 flex gap-2">
+              <button onclick="dockerAction('<%= c.ID %>', 'restart')" class="px-3 py-1 bg-yellow-600 rounded">Restart</button>
+              <% if (c.State === 'running') { %>
+                <button onclick="dockerAction('<%= c.ID %>', 'stop')" class="px-3 py-1 bg-red-600 rounded">Stop</button>
+              <% } else { %>
+                <button onclick="dockerAction('<%= c.ID %>', 'start')" class="px-3 py-1 bg-green-600 rounded">Start</button>
+              <% } %>
+              <a href="/docker/logs/<%= c.ID %>" class="px-3 py-1 bg-gray-600 rounded">Logs</a>
+              <button onclick="dockerAction('<%= c.ID %>', 'rm')" class="px-3 py-1 bg-gray-500 rounded">Remove</button>
+            </div>
 
-          <!-- Chart -->
-          <div class="mt-4 h-40 bg-gray-800 p-2 rounded">
-            <canvas id="chart-<%= c.ID %>"></canvas>
+            <!-- Chart -->
+            <div class="mt-4 h-40">
+              <canvas id="chart-<%= c.ID %>" class="bg-gray-700 p-2 rounded"></canvas>
+            </div>
           </div>
-        </div>
-      <% }) %>
-    </div>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <p>No Docker containers found.</p>
+    <% } %>
   </div>
 
   <script>
     const socket = io();
     const charts = {};
 
-    function createChart(ctx) {
-      return new Chart(ctx, {
+    // Initialize charts for all containers
+    document.querySelectorAll("canvas[id^='chart-']").forEach(c => {
+      const ctx = c.getContext("2d");
+      const id = c.id.split("-")[1];
+      charts[id] = new Chart(ctx, {
         type: "line",
         data: { labels: [], datasets: [
           { label: "CPU (%)", borderColor: "lime", data: [], yAxisID: "y" },
           { label: "Memory (MB)", borderColor: "skyblue", data: [], yAxisID: "y1" }
         ]},
         options: {
-          responsive: true,
-          maintainAspectRatio: false,
+          responsive: true, maintainAspectRatio: false,
           scales: { y: { position: "left" }, y1: { position: "right", grid: { drawOnChartArea: false } } }
         }
       });
-    }
-
-    document.querySelectorAll("canvas[id^='chart-']").forEach(c => {
-      const ctx = c.getContext("2d");
-      const id = c.id.split("-")[1];
-      charts[id] = createChart(ctx);
     });
 
     socket.on("dockerUpdate", (containers) => {
       containers.forEach(c => {
-        const card = document.getElementById(`cont-${c.ID}`);
-        if (!card) return;
-
-        card.querySelector(".status").innerText = c.State;
-        card.querySelector(".cpu").innerText = c.CPU || 0;
-        card.querySelector(".mem").innerText = c.Memory || 0;
-
         const chart = charts[c.ID];
-        if (!chart) return;
+        if (chart) {
+          const now = new Date().toLocaleTimeString();
+          if (chart.data.labels.length > 20) {
+            chart.data.labels.shift();
+            chart.data.datasets[0].data.shift();
+            chart.data.datasets[1].data.shift();
+          }
+          chart.data.labels.push(now);
+          chart.data.datasets[0].data.push(c.CPU || 0);
+          chart.data.datasets[1].data.push(c.Memory || 0);
+          chart.update();
 
-        const now = new Date().toLocaleTimeString();
-        if (chart.data.labels.length > 20) {
-          chart.data.labels.shift();
-          chart.data.datasets[0].data.shift();
-          chart.data.datasets[1].data.shift();
+          // Update card numbers
+          const card = document.getElementById(`container-${c.ID}`);
+          if (card) {
+            card.querySelector(".cpu").innerText = c.CPU || 0;
+            card.querySelector(".mem").innerText = c.Memory || 0;
+            const statusSpan = card.querySelector("span");
+            statusSpan.className = c.State === 'running' ? 'text-green-400' : 'text-red-400';
+            statusSpan.innerText = c.State;
+          }
         }
-        chart.data.labels.push(now);
-        chart.data.datasets[0].data.push(c.CPU || 0);
-        chart.data.datasets[1].data.push(c.Memory || 0);
-        chart.update();
       });
     });
 
