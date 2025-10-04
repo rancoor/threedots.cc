@@ -20,7 +20,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.set("trust proxy", true); // Trust nginx proxy
+// Trust proxy setting - only enable in production with nginx
+if (process.env.NODE_ENV === 'production') {
+  app.set("trust proxy", 1); // Trust first proxy (nginx)
+}
 const httpServer = createServer(app);
 const io = new Server(httpServer);
 
@@ -472,7 +475,7 @@ app.get("/system/details/:pid", isAuthenticated, async (req, res) => {
   try {
     const { stdout } = await execAsync(`ps -p ${pid} -o pid,user,%cpu,%mem,stat,start,command --no-headers`);
     if (stdout.trim()) {
-      const parts = stdout.trim().split(/\\s+/);
+      const parts = stdout.trim().split(/\s+/);
       const details = {
         PID: parts[0],
         USER: parts[1],
@@ -482,10 +485,167 @@ app.get("/system/details/:pid", isAuthenticated, async (req, res) => {
         START: parts[5],
         COMMAND: parts.slice(6).join(' ')
       };
+      
+      // Get additional process details
+      try {
+        const { stdout: memInfo } = await execAsync(`ps -p ${pid} -o pid,vsz,rss --no-headers`);
+        if (memInfo.trim()) {
+          const memParts = memInfo.trim().split(/\s+/);
+          details.VSZ = memParts[1]; // Virtual memory size
+          details.RSS = memParts[2]; // Resident memory size
+        }
+      } catch (memErr) {
+        console.warn('Could not get memory details:', memErr.message);
+      }
+      
       res.json({ success: true, details });
     } else {
       res.json({ success: false, error: 'Process not found' });
     }
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// New endpoint for process logs
+app.get("/system/logs/:pid", isAuthenticated, async (req, res) => {
+  const { pid } = req.params;
+  try {
+    // Try to get process command first
+    const { stdout: cmdOut } = await execAsync(`ps -p ${pid} -o command --no-headers`);
+    if (!cmdOut.trim()) {
+      res.json({ success: false, error: 'Process not found' });
+      return;
+    }
+    
+    const command = cmdOut.trim();
+    let logs = [];
+    
+    // Try different methods to get logs based on process type
+    try {
+      // Method 1: Check if it's a journald service
+      const serviceName = command.split(' ')[0].split('/').pop();
+      const { stdout: journalLogs } = await execAsync(`journalctl -u ${serviceName} --no-pager -n 50 --since "1 hour ago" 2>/dev/null || echo "No journal logs"`);
+      if (journalLogs && !journalLogs.includes('No journal logs')) {
+        logs.push({ type: 'journal', content: journalLogs });
+      }
+    } catch (journalErr) {
+      // Ignore journal errors
+    }
+    
+    try {
+      // Method 2: Check common log locations
+      const logPaths = [
+        `/var/log/${command.split(' ')[0].split('/').pop()}.log`,
+        `/var/log/syslog`,
+        `/var/log/messages`
+      ];
+      
+      for (const logPath of logPaths) {
+        try {
+          const { stdout: fileContent } = await execAsync(`grep -i "${pid}\|${command.split(' ')[0]}" ${logPath} 2>/dev/null | tail -20 || echo ""`);
+          if (fileContent.trim()) {
+            logs.push({ type: 'file', path: logPath, content: fileContent });
+          }
+        } catch (fileErr) {
+          // Ignore file errors
+        }
+      }
+    } catch (fileErr) {
+      // Ignore file errors
+    }
+    
+    // Method 3: Get process file descriptors (open files)
+    try {
+      const { stdout: lsofOut } = await execAsync(`lsof -p ${pid} 2>/dev/null | grep -E "(log|tmp)" | head -10 || echo ""`);
+      if (lsofOut.trim()) {
+        logs.push({ type: 'files', content: lsofOut });
+      }
+    } catch (lsofErr) {
+      // Ignore lsof errors
+    }
+    
+    // If no logs found, return basic process info
+    if (logs.length === 0) {
+      logs.push({ 
+        type: 'info', 
+        content: `No specific logs found for process ${pid} (${command})\n\nProcess is running with command: ${command}` 
+      });
+    }
+    
+    res.json({ success: true, logs, command, pid });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// System statistics endpoint
+app.get("/system/stats", isAuthenticated, async (req, res) => {
+  try {
+    const stats = {};
+    
+    // Get system uptime
+    try {
+      const { stdout: uptime } = await execAsync('uptime -p');
+      stats.uptime = uptime.trim();
+    } catch (err) {
+      stats.uptime = 'Unknown';
+    }
+    
+    // Get system load
+    try {
+      const { stdout: loadavg } = await execAsync('cat /proc/loadavg');
+      const loads = loadavg.trim().split(' ');
+      stats.load = {
+        '1min': parseFloat(loads[0]) || 0,
+        '5min': parseFloat(loads[1]) || 0,
+        '15min': parseFloat(loads[2]) || 0
+      };
+    } catch (err) {
+      stats.load = { '1min': 0, '5min': 0, '15min': 0 };
+    }
+    
+    // Get memory usage
+    try {
+      const { stdout: meminfo } = await execAsync('free -m');
+      const lines = meminfo.split('\n');
+      const memLine = lines[1].split(/\s+/);
+      stats.memory = {
+        total: parseInt(memLine[1]) || 0,
+        used: parseInt(memLine[2]) || 0,
+        free: parseInt(memLine[3]) || 0,
+        available: parseInt(memLine[6]) || 0
+      };
+      stats.memory.usedPercent = Math.round((stats.memory.used / stats.memory.total) * 100);
+    } catch (err) {
+      stats.memory = { total: 0, used: 0, free: 0, available: 0, usedPercent: 0 };
+    }
+    
+    // Get CPU usage
+    try {
+      const { stdout: cpuinfo } = await execAsync('grep "cpu MHz" /proc/cpuinfo | wc -l');
+      stats.cpuCores = parseInt(cpuinfo.trim()) || 1;
+    } catch (err) {
+      stats.cpuCores = 1;
+    }
+    
+    // Get process count
+    try {
+      const processes = await getSystemProcesses();
+      stats.processCount = processes.length;
+      
+      // Calculate average CPU and memory usage
+      const totalCpu = processes.reduce((sum, proc) => sum + (parseFloat(proc.CPU) || 0), 0);
+      const totalMem = processes.reduce((sum, proc) => sum + (parseFloat(proc.MEM) || 0), 0);
+      stats.avgCpu = Math.round((totalCpu / processes.length) * 100) / 100;
+      stats.avgMem = Math.round((totalMem / processes.length) * 100) / 100;
+    } catch (err) {
+      stats.processCount = 0;
+      stats.avgCpu = 0;
+      stats.avgMem = 0;
+    }
+    
+    res.json({ success: true, stats });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
@@ -531,6 +691,30 @@ io.on("connection", (socket) => {
       console.error("Socket update error:", err.message);
     }
   }, 5000);
+  
+  // Handle process kill requests from client
+  socket.on("killProcess", async (data) => {
+    try {
+      const { pid } = data;
+      await execAsync(`kill ${pid}`);
+      socket.emit("processKilled", { success: true, pid, message: `Process ${pid} killed successfully` });
+      io.emit("processRemoved", { pid }); // Notify all clients
+    } catch (err) {
+      socket.emit("processKilled", { success: false, error: err.message });
+    }
+  });
+  
+  // Handle force kill requests
+  socket.on("forceKillProcess", async (data) => {
+    try {
+      const { pid } = data;
+      await execAsync(`kill -9 ${pid}`);
+      socket.emit("processKilled", { success: true, pid, message: `Process ${pid} force killed successfully` });
+      io.emit("processRemoved", { pid }); // Notify all clients
+    } catch (err) {
+      socket.emit("processKilled", { success: false, error: err.message });
+    }
+  });
 
   socket.on("disconnect", () => clearInterval(interval));
 });
