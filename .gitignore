@@ -1,2 +1,9 @@
 .env
 node_modules/
+*.log
+
+# Test process temporary files
+temp-*.txt
+temp-*.json
+temp-python-*
+test-*.log
