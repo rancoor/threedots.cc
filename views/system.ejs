@@ -16,7 +16,7 @@
     <!-- System Statistics Panel -->
     <div id="systemStats" class="bg-gray-800 p-4 rounded-xl mb-6">
       <h3 class="text-lg font-bold mb-3 text-blue-400">System Statistics</h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <div class="text-center">
           <div class="text-2xl font-bold text-green-400" id="processCount">-</div>
           <div class="text-sm text-gray-400">Active Processes</div>
@@ -33,6 +33,13 @@
           <div class="text-2xl font-bold text-purple-400" id="systemLoad">-</div>
           <div class="text-sm text-gray-400">System Load (1m)</div>
         </div>
+        <div class="text-center">
+          <div class="text-2xl font-bold text-orange-400" id="dataPoints">-</div>
+          <div class="text-sm text-gray-400">Total Data Points</div>
+        </div>
+      </div>
+      <div class="mt-4 text-center text-sm text-gray-500">
+        <span id="dataRange">Charts show up to 1 hour of historical data (5-second intervals)</span>
       </div>
     </div>
 
@@ -102,6 +109,26 @@
     </div>
   </div>
 
+  <!-- Historical Data Modal -->
+  <div id="historyModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-gray-800 p-6 rounded-xl max-w-6xl w-full mx-4 max-h-96">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-bold">Historical Data - Process <span id="historyPid"></span></h3>
+        <button onclick="closeModal('historyModal')" class="text-gray-400 hover:text-white">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="bg-gray-900 p-4 rounded h-80">
+        <canvas id="fullHistoryChart"></canvas>
+      </div>
+      <div id="historyInfo" class="mt-4 text-sm text-gray-400 text-center">
+        <!-- Historical data info will be loaded here -->
+      </div>
+    </div>
+  </div>
+
   <!-- Loading Modal -->
   <div id="loadingModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
     <div class="bg-gray-800 p-6 rounded-xl">
@@ -121,15 +148,95 @@
       return new Chart(ctx, {
         type: "line",
         data: { labels: [], datasets: [
-          { label: "CPU (%)", borderColor: "lime", data: [], yAxisID: "y" },
-          { label: "Memory (%)", borderColor: "cyan", data: [], yAxisID: "y1" }
+          { 
+            label: "CPU (%)", 
+            borderColor: "rgb(34, 197, 94)", // green-500
+            backgroundColor: "rgba(34, 197, 94, 0.1)",
+            data: [], 
+            yAxisID: "y",
+            tension: 0.1,
+            pointRadius: 1,
+            pointHoverRadius: 4
+          },
+          { 
+            label: "Memory (%)", 
+            borderColor: "rgb(6, 182, 212)", // cyan-500 
+            backgroundColor: "rgba(6, 182, 212, 0.1)",
+            data: [], 
+            yAxisID: "y1",
+            tension: 0.1,
+            pointRadius: 1,
+            pointHoverRadius: 4
+          }
         ]},
         options: {
-          responsive: true, maintainAspectRatio: false,
-          scales: { y: { position: "left" }, y1: { position: "right", grid: { drawOnChartArea: false } } },
+          responsive: true, 
+          maintainAspectRatio: false,
+          interaction: {
+            intersect: false,
+            mode: 'index'
+          },
+          scales: { 
+            x: {
+              ticks: {
+                color: 'white',
+                maxTicksLimit: 10,
+                callback: function(value, index, values) {
+                  // Show only every nth label to avoid overcrowding
+                  const totalLabels = this.chart.data.labels.length;
+                  if (totalLabels > 50) {
+                    return index % Math.ceil(totalLabels / 10) === 0 ? this.chart.data.labels[value] : '';
+                  }
+                  return this.chart.data.labels[value];
+                }
+              },
+              grid: {
+                color: 'rgba(255, 255, 255, 0.1)'
+              }
+            },
+            y: { 
+              position: "left",
+              ticks: { color: 'white' },
+              grid: { color: 'rgba(255, 255, 255, 0.1)' },
+              title: {
+                display: true,
+                text: 'CPU %',
+                color: 'rgb(34, 197, 94)'
+              }
+            }, 
+            y1: { 
+              position: "right", 
+              grid: { drawOnChartArea: false },
+              ticks: { color: 'white' },
+              title: {
+                display: true,
+                text: 'Memory %',
+                color: 'rgb(6, 182, 212)'
+              }
+            }
+          },
           plugins: {
             legend: {
-              labels: { color: 'white' }
+              labels: { color: 'white', usePointStyle: true }
+            },
+            tooltip: {
+              backgroundColor: 'rgba(0, 0, 0, 0.8)',
+              titleColor: 'white',
+              bodyColor: 'white',
+              callbacks: {
+                title: function(context) {
+                  return 'Time: ' + context[0].label;
+                },
+                afterTitle: function(context) {
+                  // Show data point count
+                  return `Data points: ${context[0].chart.data.labels.length}`;
+                }
+              }
+            }
+          },
+          elements: {
+            line: {
+              borderWidth: 2
             }
           }
         }
@@ -190,39 +297,52 @@
                 <button onclick="forceKillProcess('${proc.PID}')" class="px-3 py-1 bg-red-800 rounded hover:bg-red-700 transition-colors text-sm">Force Kill</button>
                 <button onclick="viewDetails('${proc.PID}')" class="px-3 py-1 bg-blue-600 rounded hover:bg-blue-500 transition-colors text-sm">Details</button>
                 <button onclick="viewLogs('${proc.PID}')" class="px-3 py-1 bg-green-600 rounded hover:bg-green-500 transition-colors text-sm">Logs</button>
+                <button onclick="viewHistoricalData('${proc.PID}')" class="px-3 py-1 bg-purple-600 rounded hover:bg-purple-500 transition-colors text-sm">History</button>
               </div>
-              <div class="mt-4 h-40 bg-gray-800 p-2 rounded">
+              <div class="mt-4 h-40 bg-gray-800 p-2 rounded relative">
                 <canvas id="chart-${proc.PID}"></canvas>
+                <div class="absolute top-2 right-2 text-xs text-gray-400" id="data-count-${proc.PID}">
+                  ${proc.historyLength || 0} data points
+                </div>
               </div>
             </div>
           `;
           grid.insertAdjacentHTML('beforeend', cardHtml);
           
-          // Initialize chart for new process
+          // Initialize chart for new process with historical data
           const canvas = document.getElementById(`chart-${proc.PID}`);
           if (canvas) {
             const ctx = canvas.getContext('2d');
             charts[proc.PID] = createChart(ctx);
+            
+            // Load historical data if available
+            if (proc.chartData && proc.chartData.labels.length > 0) {
+              charts[proc.PID].data.labels = proc.chartData.labels;
+              charts[proc.PID].data.datasets[0].data = proc.chartData.cpu;
+              charts[proc.PID].data.datasets[1].data = proc.chartData.memory;
+              charts[proc.PID].update('none');
+            }
           }
         } else {
           // Update existing card
           card.querySelector(".cpu").innerText = proc.CPU + "%";
           card.querySelector(".mem").innerText = proc.MEM + "%";
           card.querySelector(".status").innerText = proc.STAT;
+          
+          // Update data point counter
+          const dataCounter = document.getElementById(`data-count-${proc.PID}`);
+          if (dataCounter) {
+            dataCounter.textContent = `${proc.historyLength || 0} data points`;
+          }
         }
 
-        // Update chart
+        // Update chart with full historical data
         const chart = charts[proc.PID];
-        if (chart) {
-          const now = new Date().toLocaleTimeString();
-          if (chart.data.labels.length > 20) {
-            chart.data.labels.shift();
-            chart.data.datasets[0].data.shift();
-            chart.data.datasets[1].data.shift();
-          }
-          chart.data.labels.push(now);
-          chart.data.datasets[0].data.push(parseFloat(proc.CPU) || 0);
-          chart.data.datasets[1].data.push(parseFloat(proc.MEM) || 0);
+        if (chart && proc.chartData) {
+          // Replace entire dataset with historical data
+          chart.data.labels = proc.chartData.labels;
+          chart.data.datasets[0].data = proc.chartData.cpu;
+          chart.data.datasets[1].data = proc.chartData.memory;
           chart.update('none'); // Disable animation for better performance
         }
       });
@@ -259,6 +379,21 @@
             document.getElementById('avgCpu').textContent = stats.avgCpu + '%';
             document.getElementById('memUsage').textContent = stats.memory.usedPercent + '%';
             document.getElementById('systemLoad').textContent = stats.load['1min'];
+            
+            // Calculate total data points across all processes
+            let totalDataPoints = 0;
+            processesData.forEach(proc => {
+              totalDataPoints += proc.historyLength || 0;
+            });
+            document.getElementById('dataPoints').textContent = totalDataPoints;
+            
+            // Update data range info
+            if (totalDataPoints > 0) {
+              const avgPoints = Math.round(totalDataPoints / (processesData.length || 1));
+              const timeSpan = Math.round((avgPoints * 5) / 60); // Convert to minutes
+              document.getElementById('dataRange').textContent = 
+                `Charts show ${timeSpan} minutes of data (${totalDataPoints} total points across ${processesData.length} processes)`;
+            }
           }
         })
         .catch(err => console.error('Error updating system stats:', err));
@@ -376,6 +511,112 @@
             showModal('logsModal');
           } else {
             showNotification(`Error fetching logs: ${data.error}`, 'error');
+          }
+        })
+        .catch(err => {
+          hideLoading();
+          showNotification(`Error: ${err.message}`, 'error');
+        });
+    }
+    
+    function viewHistoricalData(pid) {
+      showLoading();
+      fetch(`/system/history/${pid}`)
+        .then(res => res.json())
+        .then(data => {
+          hideLoading();
+          if (data.success) {
+            document.getElementById('historyPid').textContent = pid;
+            
+            // Update info panel
+            const infoText = `${data.dataPoints} data points collected${data.timeRange ? 
+              ` from ${new Date(data.timeRange.start).toLocaleString()} to ${new Date(data.timeRange.end).toLocaleString()}` : 
+              ' (no data available yet)'}`;
+            document.getElementById('historyInfo').innerHTML = infoText;
+            
+            // Create or update the full history chart
+            const canvas = document.getElementById('fullHistoryChart');
+            const ctx = canvas.getContext('2d');
+            
+            // Destroy existing chart if it exists
+            if (window.fullHistoryChart) {
+              window.fullHistoryChart.destroy();
+            }
+            
+            // Create new chart with all historical data
+            window.fullHistoryChart = new Chart(ctx, {
+              type: 'line',
+              data: data.chartData,
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                  intersect: false,
+                  mode: 'index'
+                },
+                scales: {
+                  x: {
+                    ticks: {
+                      color: 'white',
+                      maxTicksLimit: 15,
+                      callback: function(value, index, values) {
+                        // Show every nth label based on data density
+                        const totalLabels = this.chart.data.labels.length;
+                        if (totalLabels > 100) {
+                          return index % Math.ceil(totalLabels / 15) === 0 ? this.chart.data.labels[value] : '';
+                        } else if (totalLabels > 50) {
+                          return index % Math.ceil(totalLabels / 10) === 0 ? this.chart.data.labels[value] : '';
+                        }
+                        return this.chart.data.labels[value];
+                      }
+                    },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                  },
+                  y: {
+                    position: 'left',
+                    ticks: { color: 'white' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                    title: {
+                      display: true,
+                      text: 'CPU %',
+                      color: 'rgb(34, 197, 94)'
+                    }
+                  },
+                  y1: {
+                    position: 'right',
+                    grid: { drawOnChartArea: false },
+                    ticks: { color: 'white' },
+                    title: {
+                      display: true,
+                      text: 'Memory %',
+                      color: 'rgb(6, 182, 212)'
+                    }
+                  }
+                },
+                plugins: {
+                  legend: {
+                    labels: { color: 'white', usePointStyle: true }
+                  },
+                  tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: 'white',
+                    bodyColor: 'white',
+                    callbacks: {
+                      title: function(context) {
+                        return 'Time: ' + context[0].label;
+                      },
+                      afterTitle: function(context) {
+                        return `Total data points: ${context[0].chart.data.labels.length}`;
+                      }
+                    }
+                  }
+                }
+              }
+            });
+            
+            showModal('historyModal');
+          } else {
+            showNotification(`Error fetching historical data: ${data.error}`, 'error');
           }
         })
         .catch(err => {

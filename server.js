@@ -42,6 +42,58 @@ if (API_BASE && API_KEY) {
 
 const execAsync = promisify(exec);
 
+// Historical data storage for process metrics (in-memory)
+const processHistory = new Map(); // PID -> Array of historical data points
+const MAX_HISTORY_MINUTES = 60; // Store 1 hour of data
+const DATA_POINTS_PER_HOUR = 720; // 5-second intervals = 12 points per minute * 60 minutes
+
+// Historical data management functions
+function addHistoricalDataPoint(pid, cpuUsage, memUsage) {
+  const timestamp = Date.now();
+  const dataPoint = {
+    timestamp,
+    cpu: parseFloat(cpuUsage) || 0,
+    memory: parseFloat(memUsage) || 0,
+    time: new Date(timestamp).toLocaleTimeString()
+  };
+  
+  if (!processHistory.has(pid)) {
+    processHistory.set(pid, []);
+  }
+  
+  const history = processHistory.get(pid);
+  history.push(dataPoint);
+  
+  // Keep only last hour of data (720 data points at 5-second intervals)
+  if (history.length > DATA_POINTS_PER_HOUR) {
+    history.shift();
+  }
+  
+  // Clean up old data (older than 1 hour)
+  const oneHourAgo = timestamp - (60 * 60 * 1000);
+  while (history.length > 0 && history[0].timestamp < oneHourAgo) {
+    history.shift();
+  }
+}
+
+function getHistoricalData(pid) {
+  return processHistory.get(pid) || [];
+}
+
+function removeProcessHistory(pid) {
+  processHistory.delete(pid);
+}
+
+// Clean up historical data for processes that no longer exist
+function cleanupHistoricalData(currentProcesses) {
+  const currentPids = new Set(currentProcesses.map(p => p.PID));
+  for (const pid of processHistory.keys()) {
+    if (!currentPids.has(pid)) {
+      processHistory.delete(pid);
+    }
+  }
+}
+
 // Secure in-memory user store with additional security features
 const users = [];
 const failedLogins = new Map(); // Track failed login attempts
@@ -91,7 +143,7 @@ async function getSystemProcesses() {
     const processes = lines.slice(1).map(line => {
       const parts = line.trim().split(/\s+/);
       if (parts.length >= 7) {
-        return {
+        const process = {
           PID: parts[0],
           USER: parts[1],
           CPU: parseFloat(parts[2]) || 0,
@@ -100,9 +152,17 @@ async function getSystemProcesses() {
           START: parts[5],
           COMMAND: parts.slice(6).join(" ").substring(0, 50)
         };
+        
+        // Store historical data for this process
+        addHistoricalDataPoint(process.PID, process.CPU, process.MEM);
+        
+        return process;
       }
       return null;
     }).filter(proc => proc !== null);
+    
+    // Clean up historical data for processes that no longer exist
+    cleanupHistoricalData(processes);
     
     console.log("🔍 DEBUG: Final processes array length:", processes.length);
     return processes;
@@ -651,6 +711,50 @@ app.get("/system/stats", isAuthenticated, async (req, res) => {
   }
 });
 
+// Historical data endpoint
+app.get("/system/history/:pid", isAuthenticated, async (req, res) => {
+  const { pid } = req.params;
+  try {
+    const history = getHistoricalData(pid);
+    
+    // Format data for charts
+    const chartData = {
+      labels: history.map(point => point.time),
+      datasets: [
+        {
+          label: 'CPU (%)',
+          data: history.map(point => point.cpu),
+          borderColor: 'rgb(34, 197, 94)', // green-500
+          backgroundColor: 'rgba(34, 197, 94, 0.1)',
+          tension: 0.1
+        },
+        {
+          label: 'Memory (%)',
+          data: history.map(point => point.memory),
+          borderColor: 'rgb(6, 182, 212)', // cyan-500
+          backgroundColor: 'rgba(6, 182, 212, 0.1)',
+          tension: 0.1,
+          yAxisID: 'y1'
+        }
+      ],
+      timestamps: history.map(point => point.timestamp)
+    };
+    
+    res.json({ 
+      success: true, 
+      pid,
+      dataPoints: history.length,
+      timeRange: history.length > 0 ? {
+        start: new Date(history[0].timestamp).toISOString(),
+        end: new Date(history[history.length - 1].timestamp).toISOString()
+      } : null,
+      chartData
+    });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
 // Socket.io with enhanced security
 io.use((socket, next) => {
   // In production, implement proper socket authentication with session verification
@@ -685,7 +789,22 @@ io.on("connection", (socket) => {
       }
 
       const systemProcesses = await getSystemProcesses();
-      socket.emit("systemUpdate", systemProcesses);
+      
+      // Add historical data to each process for charts
+      const processesWithHistory = systemProcesses.map(process => {
+        const history = getHistoricalData(process.PID);
+        return {
+          ...process,
+          historyLength: history.length,
+          chartData: history.length > 0 ? {
+            labels: history.map(point => point.time),
+            cpu: history.map(point => point.cpu),
+            memory: history.map(point => point.memory)
+          } : { labels: [], cpu: [], memory: [] }
+        };
+      });
+      
+      socket.emit("systemUpdate", processesWithHistory);
       
     } catch (err) {
       console.error("Socket update error:", err.message);
