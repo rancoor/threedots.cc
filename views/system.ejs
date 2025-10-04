@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>System Processes Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body class="bg-gray-900 text-white">
+  <% include ("header") %>
+
+  <div class="container mx-auto p-6">
+    <h2 class="text-2xl font-semibold mb-4">System Processes</h2>
+
+    <% if (processes && processes.length > 0) { %>
+      <div id="systemGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <% processes.forEach(proc => { %>
+          <div id="proc-<%= proc.PID %>" class="bg-gray-800 p-4 rounded-xl shadow-lg">
+            <h3 class="text-lg font-bold mb-2 truncate"><%= proc.COMMAND %></h3>
+            <p>PID: <span class="text-yellow-400"><%= proc.PID %></span></p>
+            <p>User: <span class="text-blue-400"><%= proc.USER %></span></p>
+            <p>CPU: <span class="cpu text-green-400"><%= proc.CPU %>%</span></p>
+            <p>Memory: <span class="mem text-cyan-400"><%= proc.MEM %>%</span></p>
+            <p>Status: <span class="status text-purple-400"><%= proc.STAT %></span></p>
+            <p>Start Time: <span class="text-gray-400"><%= proc.START || proc.STIME %></span></p>
+
+            <!-- Actions -->
+            <div class="mt-3 flex gap-2">
+              <button onclick="killProcess('<%= proc.PID %>')" class="px-3 py-1 bg-red-600 rounded hover:bg-red-500 transition-colors">Kill</button>
+              <button onclick="viewDetails('<%= proc.PID %>')" class="px-3 py-1 bg-gray-600 rounded hover:bg-gray-500 transition-colors">Details</button>
+            </div>
+
+            <!-- Chart -->
+            <div class="mt-4 h-40 bg-gray-800 p-2 rounded">
+              <canvas id="chart-<%= proc.PID %>"></canvas>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <p class="text-gray-400">No system processes found.</p>
+    <% } %>
+  </div>
+
+  <script>
+    const socket = io();
+    const charts = {};
+
+    function createChart(ctx) {
+      return new Chart(ctx, {
+        type: "line",
+        data: { labels: [], datasets: [
+          { label: "CPU (%)", borderColor: "lime", data: [], yAxisID: "y" },
+          { label: "Memory (%)", borderColor: "cyan", data: [], yAxisID: "y1" }
+        ]},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: { y: { position: "left" }, y1: { position: "right", grid: { drawOnChartArea: false } } }
+        }
+      });
+    }
+
+    document.querySelectorAll("canvas[id^='chart-']").forEach(c => {
+      const ctx = c.getContext("2d");
+      const pid = c.id.split("-")[1];
+      charts[pid] = createChart(ctx);
+    });
+
+    socket.on("systemUpdate", (processes) => {
+      processes.forEach(proc => {
+        const card = document.getElementById(`proc-${proc.PID}`);
+        if (!card) return;
+
+        // Update card data
+        card.querySelector(".cpu").innerText = proc.CPU + "%";
+        card.querySelector(".mem").innerText = proc.MEM + "%";
+        card.querySelector(".status").innerText = proc.STAT;
+
+        // Update chart
+        const chart = charts[proc.PID];
+        if (!chart) return;
+
+        const now = new Date().toLocaleTimeString();
+        if (chart.data.labels.length > 20) {
+          chart.data.labels.shift();
+          chart.data.datasets[0].data.shift();
+          chart.data.datasets[1].data.shift();
+        }
+        chart.data.labels.push(now);
+        chart.data.datasets[0].data.push(parseFloat(proc.CPU) || 0);
+        chart.data.datasets[1].data.push(parseFloat(proc.MEM) || 0);
+        chart.update();
+      });
+    });
+
+    function killProcess(pid) {
+      if (confirm(`Are you sure you want to kill process ${pid}? This action cannot be undone.`)) {
+        fetch(`/system/kill/${pid}`, { method: "POST" })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              alert(`Process ${pid} killed successfully`);
+              // Remove the card from the grid
+              const card = document.getElementById(`proc-${pid}`);
+              if (card) card.remove();
+            } else {
+              alert(`Error killing process: ${data.error}`);
+            }
+          })
+          .catch(err => alert(`Error: ${err.message}`));
+      }
+    }
+
+    function viewDetails(pid) {
+      fetch(`/system/details/${pid}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            const details = data.details;
+            alert(`Process Details:\n\nPID: ${details.PID}\nCommand: ${details.COMMAND}\nUser: ${details.USER}\nCPU: ${details.CPU}%\nMemory: ${details.MEM}%\nStatus: ${details.STAT}\nStart Time: ${details.START || details.STIME}`);
+          } else {
+            alert(`Error fetching details: ${data.error}`);
+          }
+        })
+        .catch(err => alert(`Error: ${err.message}`));
+    }
+  </script>
+</body>
+</html>
