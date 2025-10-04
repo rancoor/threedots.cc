@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register - 3Dots Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center">
+  <div class="bg-gray-800 p-8 rounded-xl shadow-2xl w-full max-w-md">
+    <div class="text-center mb-8">
+      <h1 class="text-3xl font-bold text-white mb-2">Create Account</h1>
+      <p class="text-gray-400">Sign up for 3Dots Dashboard</p>
+    </div>
+
+    <% if (typeof error !== "undefined" && error) { %>
+      <div class="bg-red-600 text-white p-3 rounded-lg mb-4">
+        <%= error %>
+      </div>
+    <% } %>
+
+    <form action="/auth/register" method="POST" class="space-y-4">
+      <div>
+        <label for="email" class="block text-sm font-medium text-gray-300 mb-2">Email</label>
+        <input 
+          type="email" 
+          id="email" 
+          name="email" 
+          required 
+          class="w-full px-3 py-2 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="Enter your email"
+        >
+      </div>
+      
+      <div>
+        <label for="password" class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+        <input 
+          type="password" 
+          id="password" 
+          name="password" 
+          required 
+          class="w-full px-3 py-2 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="Enter your password"
+        >
+      </div>
+      
+      <div>
+        <label for="confirmPassword" class="block text-sm font-medium text-gray-300 mb-2">Confirm Password</label>
+        <input 
+          type="password" 
+          id="confirmPassword" 
+          name="confirmPassword" 
+          required 
+          class="w-full px-3 py-2 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="Confirm your password"
+        >
+      </div>
+      
+      <button 
+        type="submit" 
+        class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+      >
+        <i class="fas fa-user-plus mr-2"></i>Create Account
+      </button>
+    </form>
+
+    <div class="my-6 flex items-center">
+      <div class="flex-1 border-t border-gray-600"></div>
+      <span class="px-3 text-gray-400 text-sm">or</span>
+      <div class="flex-1 border-t border-gray-600"></div>
+    </div>
+
+    <a 
+      href="/auth/google" 
+      class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 flex items-center justify-center"
+    >
+      <i class="fab fa-google mr-2"></i>Sign up with Google
+    </a>
+
+    <div class="mt-6 text-center">
+      <p class="text-gray-400">
+        Already have an account? 
+        <a href="/auth/login" class="text-blue-400 hover:text-blue-300">Sign in here</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>

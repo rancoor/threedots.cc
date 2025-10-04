@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3Dots Dashboard - Select View</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    .dashboard-card {
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .dashboard-card:hover {
+      transform: translateY(-10px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    }
+    .icon-bounce {
+      animation: bounce 2s infinite;
+    }
+    @keyframes bounce {
+      0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-10px); }
+      60% { transform: translateY(-5px); }
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 min-h-screen text-white">
+  <!-- Header -->
+  <header class="bg-gray-800/50 backdrop-blur-sm border-b border-gray-700 p-4">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-2xl font-bold text-white flex items-center">
+        <i class="fas fa-server mr-3 text-blue-400"></i>
+        3Dots Dashboard
+      </h1>
+      <div class="flex items-center gap-4">
+        <span class="text-gray-300 text-sm">Welcome, <%= user.email %></span>
+        <a href="/auth/logout" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm transition duration-200 flex items-center">
+          <i class="fas fa-sign-out-alt mr-2"></i>Logout
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <div class="container mx-auto px-6 py-12">
+    <!-- Welcome Section -->
+    <div class="text-center mb-16">
+      <h2 class="text-4xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+        Choose Your Dashboard View
+      </h2>
+      <p class="text-xl text-gray-300 max-w-2xl mx-auto">
+        Select from our monitoring dashboards to view real-time system information, process management, and container monitoring.
+      </p>
+    </div>
+
+    <!-- Dashboard Cards -->
+    <div class="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+      
+      <!-- PM2 Dashboard Card -->
+      <div class="dashboard-card bg-gradient-to-br from-green-800/20 to-green-600/20 backdrop-blur-sm border border-green-500/30 rounded-2xl p-8 text-center">
+        <div class="mb-6">
+          <i class="fas fa-cogs text-6xl text-green-400 icon-bounce"></i>
+        </div>
+        <h3 class="text-2xl font-bold mb-4 text-green-300">PM2 Processes</h3>
+        <p class="text-gray-300 mb-6 leading-relaxed">
+          Monitor and manage your PM2 processes with real-time CPU and memory usage, restart capabilities, and log viewing.
+        </p>
+        <div class="space-y-2 mb-8 text-sm text-gray-400">
+          <div class="flex items-center justify-center">
+            <i class="fas fa-check text-green-400 mr-2"></i>
+            Real-time process monitoring
+          </div>
+          <div class="flex items-center justify-center">
+            <i class="fas fa-check text-green-400 mr-2"></i>
+            Process restart & stop controls
+          </div>
+          <div class="flex items-center justify-center">
+            <i class="fas fa-check text-green-400 mr-2"></i>
+            Live CPU & memory charts
+          </div>
+        </div>
+        <a href="/pm2" class="inline-block bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-lg transition duration-200 transform hover:scale-105">
+          <i class="fas fa-arrow-right mr-2"></i>
+          View PM2 Dashboard
+        </a>
+      </div>
+
+      <!-- Docker Dashboard Card -->
+      <div class="dashboard-card bg-gradient-to-br from-blue-800/20 to-blue-600/20 backdrop-blur-sm border border-blue-500/30 rounded-2xl p-8 text-center">
+        <div class="mb-6">
+          <i class="fab fa-docker text-6xl text-blue-400 icon-bounce" style="animation-delay: 0.2s;"></i>
+        </div>
+        <h3 class="text-2xl font-bold mb-4 text-blue-300">Docker Containers</h3>
+        <p class="text-gray-300 mb-6 leading-relaxed">
+          Manage your Docker containers with start, stop, restart operations, resource monitoring, and log access.
+        </p>
+        <div class="space-y-2 mb-8 text-sm text-gray-400">
+          <div class="flex items-center justify-center">
+            <i class="fas fa-check text-blue-400 mr-2"></i>
+            Container lifecycle management
+          </div>
+          <div class="flex items-center justify-center">
+            <i class="fas fa-check text-blue-400 mr-2"></i>
+            Resource usage tracking
+          </div>
+          <div class="flex items-center justify-center">
+            <i class="fas fa-check text-blue-400 mr-2"></i>
+            Container logs & monitoring
+          </div>
+        </div>
+        <a href="/docker" class="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg transition duration-200 transform hover:scale-105">
+          <i class="fas fa-arrow-right mr-2"></i>
+          View Docker Dashboard
+        </a>
+      </div>
+
+      <!-- System Processes Card -->
+      <div class="dashboard-card bg-gradient-to-br from-purple-800/20 to-purple-600/20 backdrop-blur-sm border border-purple-500/30 rounded-2xl p-8 text-center">
+        <div class="mb-6">
+          <i class="fas fa-microchip text-6xl text-purple-400 icon-bounce" style="animation-delay: 0.4s;"></i>
+        </div>
+        <h3 class="text-2xl font-bold mb-4 text-purple-300">System Processes</h3>
+        <p class="text-gray-300 mb-6 leading-relaxed">
+          Monitor all system processes with detailed information, kill capabilities, and real-time performance metrics.
+        </p>
+        <div class="space-y-2 mb-8 text-sm text-gray-400">
+          <div class="flex items-center justify-center">
+            <i class="fas fa-check text-purple-400 mr-2"></i>
+            Complete process visibility
+          </div>
+          <div class="flex items-center justify-center">
+            <i class="fas fa-check text-purple-400 mr-2"></i>
+            Process termination controls
+          </div>
+          <div class="flex items-center justify-center">
+            <i class="fas fa-check text-purple-400 mr-2"></i>
+            Real-time system metrics
+          </div>
+        </div>
+        <a href="/system" class="inline-block bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-8 rounded-lg transition duration-200 transform hover:scale-105">
+          <i class="fas fa-arrow-right mr-2"></i>
+          View System Dashboard
+        </a>
+      </div>
+    </div>
+
+    <!-- Quick Stats Section -->
+    <div class="mt-16 bg-gray-800/30 backdrop-blur-sm rounded-2xl p-8 border border-gray-700">
+      <h3 class="text-2xl font-bold text-center mb-8 text-white">Quick System Overview</h3>
+      <div class="grid md:grid-cols-4 gap-6 text-center">
+        <div class="bg-gray-700/50 rounded-lg p-4">
+          <i class="fas fa-server text-2xl text-blue-400 mb-2"></i>
+          <div class="text-sm text-gray-300">Server Status</div>
+          <div class="text-lg font-bold text-green-400">Online</div>
+        </div>
+        <div class="bg-gray-700/50 rounded-lg p-4">
+          <i class="fas fa-clock text-2xl text-yellow-400 mb-2"></i>
+          <div class="text-sm text-gray-300">Uptime</div>
+          <div class="text-lg font-bold text-white" id="uptime">Loading...</div>
+        </div>
+        <div class="bg-gray-700/50 rounded-lg p-4">
+          <i class="fas fa-shield-alt text-2xl text-green-400 mb-2"></i>
+          <div class="text-sm text-gray-300">Security</div>
+          <div class="text-lg font-bold text-green-400">Protected</div>
+        </div>
+        <div class="bg-gray-700/50 rounded-lg p-4">
+          <i class="fas fa-user text-2xl text-purple-400 mb-2"></i>
+          <div class="text-sm text-gray-300">Session</div>
+          <div class="text-lg font-bold text-purple-400">Active</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center mt-12 text-gray-400">
+      <p>&copy; 2025 3Dots Dashboard. Real-time monitoring & management platform.</p>
+    </div>
+  </div>
+
+  <script>
+    // Simple uptime display
+    function updateUptime() {
+      const now = new Date();
+      const startTime = new Date(now.getTime() - Math.random() * 86400000); // Random uptime for demo
+      const diff = now - startTime;
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      document.getElementById('uptime').textContent = `${hours}h ${minutes}m`;
+    }
+    updateUptime();
+    setInterval(updateUptime, 60000); // Update every minute
+  </script>
+</body>
+</html>
